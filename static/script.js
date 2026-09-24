@@ -388,7 +388,7 @@ function initWheel() {
     <circle cx="${cx}" cy="${cy}" r="54" fill="#FFFFFF" stroke="#000000" stroke-width="5"/>
     <circle cx="${cx}" cy="${cy}" r="43" fill="#800020" stroke="#000000" stroke-width="3"/>
     <circle cx="${cx}" cy="${cy}" r="32" fill="#FFFFFF" stroke="#000000" stroke-width="3"/>
-    <text x="${cx}" y="${cy + 5}" text-anchor="middle" fill="#000000" font-family="'Space Grotesk', sans-serif" font-weight="900" font-size="11.5" letter-spacing="2">DRACIN</text>
+    <text x="${cx}" y="${cy + 5}" text-anchor="middle" fill="#000000" font-family="'Space Grotesk', sans-serif" font-weight="900" font-size="11.5" letter-spacing="2">DOCIN</text>
   </svg>`;
 
   wheelEl.innerHTML = svgHtml;

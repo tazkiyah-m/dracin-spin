@@ -1,4 +1,4 @@
-# 🍗 DRACIN - Piring Saji Spin & Menang (Promo Toko)
+# 🍗 DOCIN - Piring Saji Spin & Menang (Promo Toko)
 
 Aplikasi Web Promo Roda Putar Keberuntungan bertema **Piring Saji Keramik Makanan** dengan desain **Neobrutalism**, sistem autentikasi kasir berbasis PIN, dan proteksi anti-cheat di sisi server Python (Flask).
 
@@ -9,7 +9,7 @@ Aplikasi Web Promo Roda Putar Keberuntungan bertema **Piring Saji Keramik Makana
 - **Desain Neobrutalism Unik:** 
   - Visual mesin putar menyerupai piring saji keramik dengan penunjuk garpu makan saji.
   - Ornamen stiker makanan (paha ayam, donat, minuman boba) di latar belakang.
-  - Tipografi tegas Google Fonts (*Space Grotesk* & *Outfit*) dengan palet warna Maroon Dracin, Hitam, dan Krem.
+  - Tipografi tegas Google Fonts (*Space Grotesk* & *Outfit*) dengan palet warna Maroon Docin, Hitam, dan Krem.
 - **Audio & Efek Real-time:**
   - Musik latar (*Backsound*) Doraemon dengan tombol toggle ON/OFF.
   - Efek suara detukan pasak roda mekanikal yang tersinkronisasi 100% dengan fisika putaran (*cubic-bezier*).
