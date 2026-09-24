@@ -1,18 +1,24 @@
 """
 Spin & Menang - Palekko Chicken / Gacoan DNA / Grass Jelly Drink
 -----------------------------------------------------------------
-Backend logika untuk web spin promo dengan sistem keamanan lengkap:
+Backend logika untuk web spin promo dengan database permanen (SQLite):
+- Database ACID SQLite (dracin.db) untuk persistensi kredit & hitungan putaran
+- Data kredit & hitungan TIDAK AKAN HILANG saat server restart/sleep
 - Autentikasi PIN 6 digit untuk Admin/Kasir (/admin & /api/admin/*)
 - Proteksi Brute-force dengan lockout otomatis jika 5x salah PIN
 - Token sesi khusus layar pelanggan (Client Session Token)
 - Proteksi Anti-Cheat: Threading Lock (Race condition) & Cooldown Spin
-- Validasi ketat input tipe spin
+- Logika pasti untung:
+  * 2K: Setiap kelipatan 10 HANYA Grass Jelly Drink
+  * 5K: Setiap kelipatan 15 GRAND PRIZE Palekko Chicken (kelipatan 5 & 10 hadiah reguler)
 """
 
+import json
 import os
 import random
-import time
+import sqlite3
 import threading
+import time
 import uuid
 from datetime import date
 from functools import wraps
@@ -21,6 +27,9 @@ from flask import Flask, jsonify, redirect, render_template, request, session
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dracin-spin-super-secret-key-2026")
+
+# Lokasi File Database SQLite
+DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dracin.db")
 
 # PIN Admin / Kasir (Default: 123456, bisa diatur lewat ENV)
 ADMIN_PIN = os.environ.get("ADMIN_PIN", "123456")
@@ -41,71 +50,119 @@ PRIZES = {
     "Grass Jelly Drink": {"name": "Grass Jelly Drink", "daily_limit": 20},
 }
 
-# 10 slot roda: mayoritas zonk, 3 slot untuk masing-masing hadiah.
+# 10 slot roda piring saji
 SEGMENTS = [
-    {"prize_key": None},
-    {"prize_key": "Palekko Chicken"},
-    {"prize_key": None},
-    {"prize_key": None},
-    {"prize_key": "Gacoan DNA"},
-    {"prize_key": None},
-    {"prize_key": None},
-    {"prize_key": "Grass Jelly Drink"},
-    {"prize_key": None},
-    {"prize_key": None},
+    {"prize_key": None},                 # 0: Zonk
+    {"prize_key": "Palekko Chicken"},     # 1: Prize
+    {"prize_key": None},                 # 2: Zonk
+    {"prize_key": None},                 # 3: Zonk
+    {"prize_key": "Gacoan DNA"},          # 4: Prize
+    {"prize_key": None},                 # 5: Zonk
+    {"prize_key": None},                 # 6: Zonk
+    {"prize_key": "Grass Jelly Drink"},   # 7: Prize
+    {"prize_key": None},                 # 8: Zonk
+    {"prize_key": None},                 # 9: Zonk
 ]
 
-# Penyimpanan stok harian di memori. Direset otomatis saat tanggal berubah.
-_stock_state = {"date": date.today().isoformat(), "given": {k: 0 for k in PRIZES}}
+
+# ===== DATABASE HELPER =====
+
+def get_db():
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
-def _reset_stock_if_new_day():
+def init_db():
+    with get_db() as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS store_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS spin_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                spin_type TEXT NOT NULL,
+                is_win INTEGER NOT NULL,
+                prize_key TEXT,
+                prize_name TEXT NOT NULL
+            )
+        """)
+        # Inisialisasi default jika belum ada di database
+        defaults = {
+            "credit_2k": "0",
+            "credit_5k": "0",
+            "spin_count_2k": "0",
+            "spin_count_5k": "0",
+            "stock_date": date.today().isoformat(),
+            "stock_given": json.dumps({k: 0 for k in PRIZES})
+        }
+        for k, v in defaults.items():
+            conn.execute("INSERT OR IGNORE INTO store_settings (key, value) VALUES (?, ?)", (k, v))
+        conn.commit()
+
+
+# Inisialisasi database saat aplikasi pertama dijalankan
+init_db()
+
+
+def _reset_stock_if_new_day(conn):
     today = date.today().isoformat()
-    if _stock_state["date"] != today:
-        _stock_state["date"] = today
-        _stock_state["given"] = {k: 0 for k in PRIZES}
+    row = conn.execute("SELECT value FROM store_settings WHERE key = 'stock_date'").fetchone()
+    stored_date = row["value"] if row else ""
+    if stored_date != today:
+        conn.execute("INSERT OR REPLACE INTO store_settings (key, value) VALUES ('stock_date', ?)", (today,))
+        conn.execute("INSERT OR REPLACE INTO store_settings (key, value) VALUES ('stock_given', ?)", (json.dumps({k: 0 for k in PRIZES}),))
 
 
-def _stock_left(prize_key):
-    _reset_stock_if_new_day()
+def _stock_left(conn, prize_key):
+    _reset_stock_if_new_day(conn)
     limit = PRIZES[prize_key]["daily_limit"]
     if limit is None:
         return None
-    return max(0, limit - _stock_state["given"][prize_key])
-
-
-# Global state untuk toko (asumsi 1 layar pelanggan utama di toko)
-store_state = {
-    "credit_2k": 0,
-    "credit_5k": 0,
-    "spin_count_2k": 0,
-    "spin_count_5k": 0,
-    "history": []
-}
+    row = conn.execute("SELECT value FROM store_settings WHERE key = 'stock_given'").fetchone()
+    given = json.loads(row["value"]) if row else {}
+    return max(0, limit - given.get(prize_key, 0))
 
 
 def _public_state():
-    _reset_stock_if_new_day()
-    state = {
-        "credit_2k": store_state["credit_2k"],
-        "credit_5k": store_state["credit_5k"],
-        "history": store_state["history"][-10:][::-1],
-        "prizes": {
-            k: {"name": v["name"]}
-            for k, v in PRIZES.items()
-        },
-    }
-    # Hanya berikan info progress putaran rahasia jika admin kasir sedang login
-    if session.get("is_admin"):
-        c2k = store_state["spin_count_2k"] % 10
-        c5k = store_state["spin_count_5k"] % 15
-        state["admin_stats"] = {
-            "progress_2k": f"{c2k} / 10",
-            "progress_5k": f"{c5k} / 15",
-            "total_spins_2k": store_state["spin_count_2k"],
-            "total_spins_5k": store_state["spin_count_5k"],
+    with get_db() as conn:
+        _reset_stock_if_new_day(conn)
+        settings = dict(conn.execute("SELECT key, value FROM store_settings").fetchall())
+        c2k = int(settings.get("credit_2k", 0))
+        c5k = int(settings.get("credit_5k", 0))
+        sc2k = int(settings.get("spin_count_2k", 0))
+        sc5k = int(settings.get("spin_count_5k", 0))
+
+        # 10 riwayat putaran terakhir
+        rows = conn.execute("SELECT is_win, prize_key, prize_name FROM spin_history ORDER BY id DESC LIMIT 10").fetchall()
+        history = [
+            {"is_win": bool(r["is_win"]), "prize_key": r["prize_key"], "prize_name": r["prize_name"]}
+            for r in rows
+        ]
+
+        state = {
+            "credit_2k": c2k,
+            "credit_5k": c5k,
+            "history": history,
+            "prizes": {
+                k: {"name": v["name"]}
+                for k, v in PRIZES.items()
+            },
         }
-    return state
+
+        # Hanya berikan info progress putaran rahasia jika admin kasir sedang login
+        if session.get("is_admin"):
+            state["admin_stats"] = {
+                "progress_2k": f"{sc2k % 10} / 10",
+                "progress_5k": f"{sc5k % 15} / 15",
+                "total_spins_2k": sc2k,
+                "total_spins_5k": sc5k,
+            }
+        return state
 
 
 def admin_required(f):
@@ -161,69 +218,81 @@ def api_spin():
     if now - last_spin < 4.2:
         return jsonify({"error": "Piring masih berputar. Harap tunggu hingga berhenti."}), 429
 
-    # 4. Atomic Execution dengan Threading Lock (Cegah Race Condition)
+    # 4. Atomic Execution dengan Threading Lock & Transaksi SQLite
     with _spin_lock:
-        # Re-check cooldown di dalam lock
         if time.time() - _client_cooldowns.get(client_token, 0) < 4.2:
             return jsonify({"error": "Piring sedang berputar."}), 429
 
-        _reset_stock_if_new_day()
+        with get_db() as conn:
+            _reset_stock_if_new_day(conn)
+            credit_key = f"credit_{spin_type}"
+            count_key = f"spin_count_{spin_type}"
 
-        if spin_type == "2k" and store_state["credit_2k"] < 1:
-            return jsonify({"error": "Kredit 2K tidak cukup."}), 402
-        elif spin_type == "5k" and store_state["credit_5k"] < 1:
-            return jsonify({"error": "Kredit 5K tidak cukup."}), 402
+            cur_credit = int(conn.execute("SELECT value FROM store_settings WHERE key = ?", (credit_key,)).fetchone()["value"])
+            if cur_credit < 1:
+                return jsonify({"error": f"Kredit {spin_type.upper()} tidak cukup."}), 402
 
-        # Potong kredit dan update counter putaran rahasia
-        if spin_type == "2k":
-            store_state["credit_2k"] -= 1
-            store_state["spin_count_2k"] += 1
-            count = store_state["spin_count_2k"]
-            # 2K: Sebanyak apapun hanya akan mendapatkan Grass Jelly Drink pada putaran ke-10
-            is_winning_turn = (count % 10 == 0)
-            target_prize_pool = ["Grass Jelly Drink"]
-        else:
-            store_state["credit_5k"] -= 1
-            store_state["spin_count_5k"] += 1
-            count = store_state["spin_count_5k"]
-            # 5K: Menang setiap kelipatan 5
-            is_winning_turn = (count % 5 == 0)
-            if count % 15 == 0:
-                # TEPAT PUTARAN KE-15: Khusus Grand Prize Palekko Chicken!
-                target_prize_pool = ["Palekko Chicken"]
+            cur_count = int(conn.execute("SELECT value FROM store_settings WHERE key = ?", (count_key,)).fetchone()["value"]) + 1
+
+            # Potong kredit dan update hitungan putaran permanen di DB
+            conn.execute("UPDATE store_settings SET value = ? WHERE key = ?", (str(cur_credit - 1), credit_key))
+            conn.execute("UPDATE store_settings SET value = ? WHERE key = ?", (str(cur_count), count_key))
+
+            _client_cooldowns[client_token] = time.time()
+
+            # Aturan Hadiah & Siklus Keuntungan Toko
+            if spin_type == "2k":
+                # 2K: Sebanyak apapun hanya akan mendapatkan Grass Jelly Drink pada putaran ke-10
+                is_winning_turn = (cur_count % 10 == 0)
+                target_prize_pool = ["Grass Jelly Drink"]
             else:
-                # Putaran ke-5 dan ke-10: Hadiah reguler (bukan ayam)
-                target_prize_pool = ["Grass Jelly Drink", "Gacoan DNA"]
+                # 5K: Menang setiap kelipatan 5
+                is_winning_turn = (cur_count % 5 == 0)
+                if cur_count % 15 == 0:
+                    # Putaran ke-15: Khusus Grand Prize Palekko Chicken!
+                    target_prize_pool = ["Palekko Chicken"]
+                else:
+                    # Putaran ke-5 dan ke-10: Hadiah reguler (bukan ayam)
+                    target_prize_pool = ["Grass Jelly Drink", "Gacoan DNA"]
 
-        _client_cooldowns[client_token] = time.time()
+            zonk_indices = [i for i, seg in enumerate(SEGMENTS) if seg["prize_key"] is None]
 
-        zonk_indices = [i for i, seg in enumerate(SEGMENTS) if seg["prize_key"] is None]
-
-        # Ambil hadiah dari target_prize_pool yang stok hariannya masih ada
-        available_prize_keys = [
-            pk for pk in target_prize_pool
-            if _stock_left(pk) > 0
-        ]
-
-        if is_winning_turn and available_prize_keys:
-            chosen_prize_key = random.choice(available_prize_keys)
-            matching_indices = [
-                i for i, seg in enumerate(SEGMENTS)
-                if seg["prize_key"] == chosen_prize_key
+            # Ambil hadiah dari target_prize_pool yang stok hariannya masih ada
+            available_prize_keys = [
+                pk for pk in target_prize_pool
+                if _stock_left(conn, pk) > 0
             ]
-            chosen_index = random.choice(matching_indices)
-            _stock_state["given"][chosen_prize_key] += 1
-            result = {
-                "is_win": True,
-                "prize_key": chosen_prize_key,
-                "prize_name": PRIZES[chosen_prize_key]["name"]
-            }
-        else:
-            # 100% ZONK: Bukan giliran menang atau stok hadiah hari ini habis
-            chosen_index = random.choice(zonk_indices)
-            result = {"is_win": False, "prize_key": None, "prize_name": "Zonk"}
 
-        store_state["history"].append(result)
+            if is_winning_turn and available_prize_keys:
+                chosen_prize_key = random.choice(available_prize_keys)
+                matching_indices = [
+                    i for i, seg in enumerate(SEGMENTS)
+                    if seg["prize_key"] == chosen_prize_key
+                ]
+                chosen_index = random.choice(matching_indices)
+
+                # Update stok terpakai di database
+                row = conn.execute("SELECT value FROM store_settings WHERE key = 'stock_given'").fetchone()
+                given = json.loads(row["value"]) if row else {}
+                given[chosen_prize_key] = given.get(chosen_prize_key, 0) + 1
+                conn.execute("UPDATE store_settings SET value = ? WHERE key = 'stock_given'", (json.dumps(given),))
+
+                result = {
+                    "is_win": True,
+                    "prize_key": chosen_prize_key,
+                    "prize_name": PRIZES[chosen_prize_key]["name"]
+                }
+            else:
+                # 100% ZONK: Bukan giliran menang atau stok hadiah hari ini habis
+                chosen_index = random.choice(zonk_indices)
+                result = {"is_win": False, "prize_key": None, "prize_name": "Zonk"}
+
+            # Catat riwayat putaran ke database permanen
+            conn.execute(
+                "INSERT INTO spin_history (spin_type, is_win, prize_key, prize_name) VALUES (?, ?, ?, ?)",
+                (spin_type, 1 if result["is_win"] else 0, result["prize_key"], result["prize_name"])
+            )
+            conn.commit()
 
         return jsonify({
             "segment_index": chosen_index,
@@ -286,15 +355,15 @@ def admin_add():
     if spin_type not in ("2k", "5k"):
         return jsonify({"error": "Tipe kredit tidak valid."}), 400
 
+    key = f"credit_{spin_type}"
     with _spin_lock:
-        if spin_type == "2k":
-            store_state["credit_2k"] += 1
-        else:
-            store_state["credit_5k"] += 1
+        with get_db() as conn:
+            cur_credit = int(conn.execute("SELECT value FROM store_settings WHERE key = ?", (key,)).fetchone()["value"])
+            conn.execute("UPDATE store_settings SET value = ? WHERE key = ?", (str(cur_credit + 1), key))
+            conn.commit()
 
     return jsonify({"status": "success", "state": _public_state()})
 
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
-    # clean state ready - 2k grass jelly only, 5k 15th palekko
