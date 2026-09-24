@@ -1,8 +1,9 @@
 """
 Spin & Menang - Palekko Chicken / Gacoan DNA / Grass Jelly Drink
 -----------------------------------------------------------------
-Backend logika untuk web spin promo dengan database permanen (SQLite):
-- Database ACID SQLite (dracin.db) untuk persistensi kredit & hitungan putaran
+Backend logika untuk web spin promo dengan database permanen:
+- Mendukung PostgreSQL (production/Render) dan SQLite (development lokal)
+- Otomatis deteksi backend dari env var DATABASE_URL
 - Data kredit & hitungan TIDAK AKAN HILANG saat server restart/sleep
 - Autentikasi PIN 6 digit untuk Admin/Kasir (/admin & /api/admin/*)
 - Proteksi Brute-force dengan lockout otomatis jika 5x salah PIN
@@ -16,7 +17,6 @@ Backend logika untuk web spin promo dengan database permanen (SQLite):
 import json
 import os
 import random
-import sqlite3
 import threading
 import time
 import uuid
@@ -28,8 +28,22 @@ from flask import Flask, jsonify, redirect, render_template, request, session
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dracin-spin-super-secret-key-2026")
 
-# Lokasi File Database SQLite
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dracin.db")
+# ===== DATABASE CONFIGURATION =====
+# Jika DATABASE_URL di-set (Render production) → pakai PostgreSQL yang persisten
+# Jika tidak → pakai SQLite untuk development lokal
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+if DATABASE_URL.startswith("postgres://"):
+    # Render memakai "postgres://" tapi psycopg2 butuh "postgresql://"
+    DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+USE_POSTGRES = bool(DATABASE_URL)
+
+if USE_POSTGRES:
+    import psycopg2
+    import psycopg2.extras
+else:
+    import sqlite3
+    DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dracin.db")
 
 # PIN Admin / Kasir (Default: 123456, bisa diatur lewat ENV)
 ADMIN_PIN = os.environ.get("ADMIN_PIN", "123456")
@@ -65,44 +79,134 @@ SEGMENTS = [
 ]
 
 
-# ===== DATABASE HELPER =====
+# ===== DATABASE HELPERS =====
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH, timeout=10)
-    conn.row_factory = sqlite3.Row
-    return conn
+    """Mengembalikan koneksi database (PostgreSQL atau SQLite)."""
+    if USE_POSTGRES:
+        return psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    else:
+        conn = sqlite3.connect(DB_PATH, timeout=10)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+
+def _fetchone(conn, sql, params=()):
+    """Fetch satu baris — kompatibel dengan kedua backend."""
+    if USE_POSTGRES:
+        cur = conn.cursor()
+        cur.execute(sql.replace("?", "%s"), params)
+        return cur.fetchone()
+    return conn.execute(sql, params).fetchone()
+
+
+def _fetchall(conn, sql, params=()):
+    """Fetch semua baris — kompatibel dengan kedua backend."""
+    if USE_POSTGRES:
+        cur = conn.cursor()
+        cur.execute(sql.replace("?", "%s"), params)
+        return cur.fetchall()
+    return conn.execute(sql, params).fetchall()
+
+
+def _update(conn, sql, params=()):
+    """UPDATE/INSERT query — kompatibel dengan kedua backend."""
+    if USE_POSTGRES:
+        cur = conn.cursor()
+        cur.execute(sql.replace("?", "%s"), params)
+    else:
+        conn.execute(sql, params)
+
+
+def _upsert_setting(conn, key, value, ignore=False):
+    """INSERT OR IGNORE / INSERT OR REPLACE yang kompatibel dengan kedua backend."""
+    if USE_POSTGRES:
+        cur = conn.cursor()
+        if ignore:
+            cur.execute(
+                "INSERT INTO store_settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO NOTHING",
+                (key, value)
+            )
+        else:
+            cur.execute(
+                "INSERT INTO store_settings (key, value) VALUES (%s, %s) ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value",
+                (key, value)
+            )
+    else:
+        if ignore:
+            conn.execute("INSERT OR IGNORE INTO store_settings (key, value) VALUES (?, ?)", (key, value))
+        else:
+            conn.execute("INSERT OR REPLACE INTO store_settings (key, value) VALUES (?, ?)", (key, value))
+
+
+def _insert_history(conn, spin_type, is_win, prize_key, prize_name):
+    """Insert spin history — kompatibel dengan kedua backend."""
+    if USE_POSTGRES:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO spin_history (spin_type, is_win, prize_key, prize_name) VALUES (%s, %s, %s, %s)",
+            (spin_type, 1 if is_win else 0, prize_key, prize_name)
+        )
+    else:
+        conn.execute(
+            "INSERT INTO spin_history (spin_type, is_win, prize_key, prize_name) VALUES (?, ?, ?, ?)",
+            (spin_type, 1 if is_win else 0, prize_key, prize_name)
+        )
 
 
 def init_db():
-    with get_db() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS store_settings (
-                key TEXT PRIMARY KEY,
-                value TEXT
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS spin_history (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                spin_type TEXT NOT NULL,
-                is_win INTEGER NOT NULL,
-                prize_key TEXT,
-                prize_name TEXT NOT NULL
-            )
-        """)
-        # Inisialisasi default jika belum ada di database
+    """Inisialisasi tabel dan nilai default database."""
+    conn = get_db()
+    try:
+        if USE_POSTGRES:
+            cur = conn.cursor()
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS store_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS spin_history (
+                    id SERIAL PRIMARY KEY,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    spin_type TEXT NOT NULL,
+                    is_win INTEGER NOT NULL,
+                    prize_key TEXT,
+                    prize_name TEXT NOT NULL
+                )
+            """)
+        else:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS store_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS spin_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    spin_type TEXT NOT NULL,
+                    is_win INTEGER NOT NULL,
+                    prize_key TEXT,
+                    prize_name TEXT NOT NULL
+                )
+            """)
+
         defaults = {
-            "credit_2k": "0",
-            "credit_5k": "0",
+            "credit_2k":     "0",
+            "credit_5k":     "0",
             "spin_count_2k": "0",
             "spin_count_5k": "0",
-            "stock_date": date.today().isoformat(),
-            "stock_given": json.dumps({k: 0 for k in PRIZES})
+            "stock_date":    date.today().isoformat(),
+            "stock_given":   json.dumps({k: 0 for k in PRIZES}),
         }
         for k, v in defaults.items():
-            conn.execute("INSERT OR IGNORE INTO store_settings (key, value) VALUES (?, ?)", (k, v))
+            _upsert_setting(conn, k, v, ignore=True)
         conn.commit()
+    finally:
+        conn.close()
 
 
 # Inisialisasi database saat aplikasi pertama dijalankan
@@ -111,11 +215,11 @@ init_db()
 
 def _reset_stock_if_new_day(conn):
     today = date.today().isoformat()
-    row = conn.execute("SELECT value FROM store_settings WHERE key = 'stock_date'").fetchone()
+    row = _fetchone(conn, "SELECT value FROM store_settings WHERE key = 'stock_date'")
     stored_date = row["value"] if row else ""
     if stored_date != today:
-        conn.execute("INSERT OR REPLACE INTO store_settings (key, value) VALUES ('stock_date', ?)", (today,))
-        conn.execute("INSERT OR REPLACE INTO store_settings (key, value) VALUES ('stock_given', ?)", (json.dumps({k: 0 for k in PRIZES}),))
+        _upsert_setting(conn, "stock_date", today)
+        _upsert_setting(conn, "stock_given", json.dumps({k: 0 for k in PRIZES}))
 
 
 def _stock_left(conn, prize_key):
@@ -123,46 +227,51 @@ def _stock_left(conn, prize_key):
     limit = PRIZES[prize_key]["daily_limit"]
     if limit is None:
         return None
-    row = conn.execute("SELECT value FROM store_settings WHERE key = 'stock_given'").fetchone()
+    row = _fetchone(conn, "SELECT value FROM store_settings WHERE key = 'stock_given'")
     given = json.loads(row["value"]) if row else {}
     return max(0, limit - given.get(prize_key, 0))
 
 
 def _public_state():
-    with get_db() as conn:
+    conn = get_db()
+    try:
         _reset_stock_if_new_day(conn)
-        settings = dict(conn.execute("SELECT key, value FROM store_settings").fetchall())
-        c2k = int(settings.get("credit_2k", 0))
-        c5k = int(settings.get("credit_5k", 0))
+        rows = _fetchall(conn, "SELECT key, value FROM store_settings")
+        settings = {r["key"]: r["value"] for r in rows}
+        c2k  = int(settings.get("credit_2k",     0))
+        c5k  = int(settings.get("credit_5k",     0))
         sc2k = int(settings.get("spin_count_2k", 0))
         sc5k = int(settings.get("spin_count_5k", 0))
 
         # 10 riwayat putaran terakhir
-        rows = conn.execute("SELECT is_win, prize_key, prize_name FROM spin_history ORDER BY id DESC LIMIT 10").fetchall()
+        history_rows = _fetchall(
+            conn,
+            "SELECT is_win, prize_key, prize_name FROM spin_history ORDER BY id DESC LIMIT 10"
+        )
         history = [
             {"is_win": bool(r["is_win"]), "prize_key": r["prize_key"], "prize_name": r["prize_name"]}
-            for r in rows
+            for r in history_rows
         ]
 
         state = {
             "credit_2k": c2k,
             "credit_5k": c5k,
-            "history": history,
-            "prizes": {
-                k: {"name": v["name"]}
-                for k, v in PRIZES.items()
-            },
+            "history":   history,
+            "prizes":    {k: {"name": v["name"]} for k, v in PRIZES.items()},
         }
 
-        # Hanya berikan info progress putaran rahasia jika admin kasir sedang login
+        # Info progress rahasia hanya untuk admin/kasir yang sedang login
         if session.get("is_admin"):
             state["admin_stats"] = {
-                "progress_2k": f"{sc2k % 10} / 10",
-                "progress_5k": f"{sc5k % 15} / 15",
+                "progress_2k":    f"{sc2k % 10} / 10",
+                "progress_5k":    f"{sc5k % 15} / 15",
                 "total_spins_2k": sc2k,
                 "total_spins_5k": sc5k,
             }
+        conn.commit()
         return state
+    finally:
+        conn.close()
 
 
 def admin_required(f):
@@ -218,46 +327,46 @@ def api_spin():
     if now - last_spin < 4.2:
         return jsonify({"error": "Piring masih berputar. Harap tunggu hingga berhenti."}), 429
 
-    # 4. Atomic Execution dengan Threading Lock & Transaksi SQLite
+    # 4. Atomic Execution dengan Threading Lock & Transaksi DB
     with _spin_lock:
         if time.time() - _client_cooldowns.get(client_token, 0) < 4.2:
             return jsonify({"error": "Piring sedang berputar."}), 429
 
-        with get_db() as conn:
+        conn = get_db()
+        try:
             _reset_stock_if_new_day(conn)
             credit_key = f"credit_{spin_type}"
-            count_key = f"spin_count_{spin_type}"
+            count_key  = f"spin_count_{spin_type}"
 
-            cur_credit = int(conn.execute("SELECT value FROM store_settings WHERE key = ?", (credit_key,)).fetchone()["value"])
+            cur_credit = int(_fetchone(conn, "SELECT value FROM store_settings WHERE key = ?", (credit_key,))["value"])
             if cur_credit < 1:
                 return jsonify({"error": f"Kredit {spin_type.upper()} tidak cukup."}), 402
 
-            cur_count = int(conn.execute("SELECT value FROM store_settings WHERE key = ?", (count_key,)).fetchone()["value"]) + 1
+            cur_count = int(_fetchone(conn, "SELECT value FROM store_settings WHERE key = ?", (count_key,))["value"]) + 1
 
-            # Potong kredit dan update hitungan putaran permanen di DB
-            conn.execute("UPDATE store_settings SET value = ? WHERE key = ?", (str(cur_credit - 1), credit_key))
-            conn.execute("UPDATE store_settings SET value = ? WHERE key = ?", (str(cur_count), count_key))
+            # Potong kredit & update hitungan putaran permanen di DB
+            _update(conn, "UPDATE store_settings SET value = ? WHERE key = ?", (str(cur_credit - 1), credit_key))
+            _update(conn, "UPDATE store_settings SET value = ? WHERE key = ?", (str(cur_count), count_key))
 
             _client_cooldowns[client_token] = time.time()
 
-            # Aturan Hadiah & Siklus Keuntungan Toko
+            # ===== ATURAN HADIAH & SIKLUS KEUNTUNGAN TOKO =====
             if spin_type == "2k":
-                # 2K: Sebanyak apapun hanya akan mendapatkan Grass Jelly Drink pada putaran ke-10
-                is_winning_turn = (cur_count % 10 == 0)
+                # 2K: Sebanyak apapun hanya Grass Jelly Drink di putaran ke-10
+                is_winning_turn   = (cur_count % 10 == 0)
                 target_prize_pool = ["Grass Jelly Drink"]
             else:
                 # 5K: Menang setiap kelipatan 5
                 is_winning_turn = (cur_count % 5 == 0)
                 if cur_count % 15 == 0:
-                    # Putaran ke-15: Khusus Grand Prize Palekko Chicken!
+                    # Putaran ke-15: Grand Prize Palekko Chicken!
                     target_prize_pool = ["Palekko Chicken"]
                 else:
-                    # Putaran ke-5 dan ke-10: Hadiah reguler (bukan ayam)
+                    # Putaran ke-5 dan ke-10: Hadiah reguler
                     target_prize_pool = ["Grass Jelly Drink", "Gacoan DNA"]
 
             zonk_indices = [i for i, seg in enumerate(SEGMENTS) if seg["prize_key"] is None]
 
-            # Ambil hadiah dari target_prize_pool yang stok hariannya masih ada
             available_prize_keys = [
                 pk for pk in target_prize_pool
                 if _stock_left(conn, pk) > 0
@@ -265,34 +374,29 @@ def api_spin():
 
             if is_winning_turn and available_prize_keys:
                 chosen_prize_key = random.choice(available_prize_keys)
-                matching_indices = [
-                    i for i, seg in enumerate(SEGMENTS)
-                    if seg["prize_key"] == chosen_prize_key
-                ]
-                chosen_index = random.choice(matching_indices)
+                matching_indices = [i for i, seg in enumerate(SEGMENTS) if seg["prize_key"] == chosen_prize_key]
+                chosen_index     = random.choice(matching_indices)
 
-                # Update stok terpakai di database
-                row = conn.execute("SELECT value FROM store_settings WHERE key = 'stock_given'").fetchone()
-                given = json.loads(row["value"]) if row else {}
+                # Update stok terpakai
+                row_given = _fetchone(conn, "SELECT value FROM store_settings WHERE key = 'stock_given'")
+                given = json.loads(row_given["value"]) if row_given else {}
                 given[chosen_prize_key] = given.get(chosen_prize_key, 0) + 1
-                conn.execute("UPDATE store_settings SET value = ? WHERE key = 'stock_given'", (json.dumps(given),))
+                _update(conn, "UPDATE store_settings SET value = ? WHERE key = 'stock_given'", (json.dumps(given),))
 
                 result = {
-                    "is_win": True,
-                    "prize_key": chosen_prize_key,
-                    "prize_name": PRIZES[chosen_prize_key]["name"]
+                    "is_win":     True,
+                    "prize_key":  chosen_prize_key,
+                    "prize_name": PRIZES[chosen_prize_key]["name"],
                 }
             else:
-                # 100% ZONK: Bukan giliran menang atau stok hadiah hari ini habis
+                # 100% ZONK
                 chosen_index = random.choice(zonk_indices)
                 result = {"is_win": False, "prize_key": None, "prize_name": "Zonk"}
 
-            # Catat riwayat putaran ke database permanen
-            conn.execute(
-                "INSERT INTO spin_history (spin_type, is_win, prize_key, prize_name) VALUES (?, ?, ?, ?)",
-                (spin_type, 1 if result["is_win"] else 0, result["prize_key"], result["prize_name"])
-            )
+            _insert_history(conn, spin_type, result["is_win"], result["prize_key"], result["prize_name"])
             conn.commit()
+        finally:
+            conn.close()
 
         return jsonify({
             "segment_index": chosen_index,
@@ -357,10 +461,13 @@ def admin_add():
 
     key = f"credit_{spin_type}"
     with _spin_lock:
-        with get_db() as conn:
-            cur_credit = int(conn.execute("SELECT value FROM store_settings WHERE key = ?", (key,)).fetchone()["value"])
-            conn.execute("UPDATE store_settings SET value = ? WHERE key = ?", (str(cur_credit + 1), key))
+        conn = get_db()
+        try:
+            cur_credit = int(_fetchone(conn, "SELECT value FROM store_settings WHERE key = ?", (key,))["value"])
+            _update(conn, "UPDATE store_settings SET value = ? WHERE key = ?", (str(cur_credit + 1), key))
             conn.commit()
+        finally:
+            conn.close()
 
     return jsonify({"status": "success", "state": _public_state()})
 
