@@ -78,6 +78,8 @@ def _stock_left(prize_key):
 store_state = {
     "credit_2k": 0,
     "credit_5k": 0,
+    "spin_count_2k": 0,
+    "spin_count_5k": 0,
     "history": []
 }
 
@@ -85,7 +87,7 @@ store_state = {
 def _public_state():
     _reset_stock_if_new_day()
     stock = {k: _stock_left(k) for k in PRIZES}
-    return {
+    state = {
         "credit_2k": store_state["credit_2k"],
         "credit_5k": store_state["credit_5k"],
         "history": store_state["history"][-10:][::-1],
@@ -94,6 +96,17 @@ def _public_state():
             for k, v in PRIZES.items()
         },
     }
+    # Hanya berikan info progress putaran rahasia jika admin kasir sedang login
+    if session.get("is_admin"):
+        c2k = store_state["spin_count_2k"] % 10
+        c5k = store_state["spin_count_5k"] % 5
+        state["admin_stats"] = {
+            "progress_2k": f"{c2k} / 10",
+            "progress_5k": f"{c5k} / 5",
+            "total_spins_2k": store_state["spin_count_2k"],
+            "total_spins_5k": store_state["spin_count_5k"],
+        }
+    return state
 
 
 def admin_required(f):
@@ -162,35 +175,36 @@ def api_spin():
         elif spin_type == "5k" and store_state["credit_5k"] < 1:
             return jsonify({"error": "Kredit 5K tidak cukup."}), 402
 
-        # Potong kredit secara atomic
+        # Potong kredit dan update counter putaran rahasia
         if spin_type == "2k":
             store_state["credit_2k"] -= 1
+            store_state["spin_count_2k"] += 1
+            # 2K: Menang hanya jika tepat putaran ke-10 (kelipatan 10)
+            is_winning_turn = (store_state["spin_count_2k"] % 10 == 0)
         else:
             store_state["credit_5k"] -= 1
+            store_state["spin_count_5k"] += 1
+            # 5K: Menang hanya jika tepat putaran ke-5 (kelipatan 5)
+            is_winning_turn = (store_state["spin_count_5k"] % 5 == 0)
 
         _client_cooldowns[client_token] = time.time()
 
-        # Hitung peluang menang
-        weights = []
-        for i, seg in enumerate(SEGMENTS):
-            key = seg["prize_key"]
-            if key is None:
-                weight = 10 if spin_type == "2k" else 2
-            else:
-                if _stock_left(key) > 0:
-                    weight = 1 if spin_type == "2k" else 5
-                else:
-                    weight = 0
-            weights.append(weight)
+        # Slot Zonk dan Slot Hadiah yang masih ada stok
+        zonk_indices = [i for i, seg in enumerate(SEGMENTS) if seg["prize_key"] is None]
+        prize_indices = [
+            i for i, seg in enumerate(SEGMENTS)
+            if seg["prize_key"] is not None and _stock_left(seg["prize_key"]) > 0
+        ]
 
-        chosen_index = random.choices(range(len(SEGMENTS)), weights=weights, k=1)[0]
-        chosen = SEGMENTS[chosen_index]
-        prize_key = chosen["prize_key"]
-
-        if prize_key is not None:
+        if is_winning_turn and prize_indices:
+            # Giliran menang! Pilih salah satu hadiah yang tersedia
+            chosen_index = random.choice(prize_indices)
+            prize_key = SEGMENTS[chosen_index]["prize_key"]
             _stock_state["given"][prize_key] += 1
             result = {"is_win": True, "prize_key": prize_key, "prize_name": PRIZES[prize_key]["name"]}
         else:
+            # 100% ZONK: Bukan giliran menang atau stok hadiah hari ini habis
+            chosen_index = random.choice(zonk_indices)
             result = {"is_win": False, "prize_key": None, "prize_name": "Zonk"}
 
         store_state["history"].append(result)

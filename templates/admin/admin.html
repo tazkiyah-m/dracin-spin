@@ -152,6 +152,17 @@
       line-height: 1;
     }
 
+    .monitor-val-sm {
+      font-size: 1.3rem;
+    }
+
+    .status-monitor--stats {
+      margin-top: -12px;
+      margin-bottom: 22px;
+      background: #FFFFFF;
+      border: 2px dashed #000000;
+    }
+
     .actions {
       display: flex;
       flex-direction: column;
@@ -255,6 +266,18 @@
       </div>
     </div>
 
+    <!-- Monitor Rahasia Siklus Menang (Hanya Kasir) -->
+    <div class="status-monitor status-monitor--stats">
+      <div class="monitor-box">
+        <span class="monitor-label">Siklus 2K (Ke-10 Menang)</span>
+        <span class="monitor-val monitor-val-sm" id="stats-2k">0 / 10</span>
+      </div>
+      <div class="monitor-box monitor-box--5k">
+        <span class="monitor-label">Siklus 5K (Ke-5 Menang)</span>
+        <span class="monitor-val monitor-val-sm" id="stats-5k">0 / 5</span>
+      </div>
+    </div>
+
     <!-- Tombol Kasir -->
     <div class="actions">
       <button class="btn btn-2k" onclick="addCredit('2k')">
@@ -277,6 +300,8 @@
     const toast = document.getElementById("toast");
     const m2k = document.getElementById("monitor-2k");
     const m5k = document.getElementById("monitor-5k");
+    const s2k = document.getElementById("stats-2k");
+    const s5k = document.getElementById("stats-5k");
 
     async function fetchState() {
       try {
@@ -285,6 +310,10 @@
           const state = await res.json();
           m2k.textContent = state.credit_2k;
           m5k.textContent = state.credit_5k;
+          if (state.admin_stats) {
+            s2k.textContent = state.admin_stats.progress_2k;
+            s5k.textContent = state.admin_stats.progress_5k;
+          }
         }
       } catch (e) {}
     }
