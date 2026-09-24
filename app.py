@@ -180,9 +180,9 @@ def api_spin():
             store_state["credit_2k"] -= 1
             store_state["spin_count_2k"] += 1
             count = store_state["spin_count_2k"]
-            # 2K: Menang hanya jika tepat putaran ke-10 (kelipatan 10), hadiah minuman/snack
+            # 2K: Sebanyak apapun hanya akan mendapatkan Grass Jelly Drink pada putaran ke-10
             is_winning_turn = (count % 10 == 0)
-            target_prize_pool = ["Grass Jelly Drink", "Gacoan DNA"]
+            target_prize_pool = ["Grass Jelly Drink"]
         else:
             store_state["credit_5k"] -= 1
             store_state["spin_count_5k"] += 1
@@ -298,4 +298,4 @@ def admin_add():
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
-    # clean state ready for production deploy
+    # clean state ready - 2k grass jelly only, 5k 15th palekko
