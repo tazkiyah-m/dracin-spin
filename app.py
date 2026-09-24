@@ -209,8 +209,20 @@ def init_db():
         conn.close()
 
 
-# Inisialisasi database saat aplikasi pertama dijalankan
-init_db()
+_db_initialized = False
+
+def ensure_db_init():
+    global _db_initialized
+    if not _db_initialized:
+        try:
+            init_db()
+            _db_initialized = True
+        except Exception as e:
+            app.logger.warning(f"Database init warning: {e}")
+
+@app.before_request
+def auto_init_db():
+    ensure_db_init()
 
 
 def _reset_stock_if_new_day(conn):
@@ -471,6 +483,44 @@ def admin_add():
 
     return jsonify({"status": "success", "state": _public_state()})
 
+
+@app.route("/api/health")
+def api_health():
+    db_ok = False
+    err = None
+    try:
+        conn = get_db()
+        _fetchone(conn, "SELECT 1")
+        conn.close()
+        db_ok = True
+    except Exception as e:
+        err = str(e)
+    return jsonify({
+        "status": "ok" if db_ok else "db_error",
+        "use_postgres": USE_POSTGRES,
+        "database_url_configured": bool(DATABASE_URL),
+        "db_ok": db_ok,
+        "error": err
+    })
+
+
+@app.errorhandler(500)
+def handle_500(e):
+    import traceback
+    return f"""
+    <!DOCTYPE html>
+    <html>
+    <head><title>Server Error</title></head>
+    <body style="font-family:sans-serif;padding:30px;background:#111;color:#eee;">
+        <h2 style="color:#ff6b6b;">Application Error (500)</h2>
+        <p><b>Detail:</b> {e}</p>
+        <pre style="background:#222;padding:15px;border-radius:6px;overflow:auto;">{traceback.format_exc()}</pre>
+    </body>
+    </html>
+    """, 500
+
+
+handler = app
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
