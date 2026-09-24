@@ -86,13 +86,12 @@ store_state = {
 
 def _public_state():
     _reset_stock_if_new_day()
-    stock = {k: _stock_left(k) for k in PRIZES}
     state = {
         "credit_2k": store_state["credit_2k"],
         "credit_5k": store_state["credit_5k"],
         "history": store_state["history"][-10:][::-1],
         "prizes": {
-            k: {"name": v["name"], "stock_left": stock[k]}
+            k: {"name": v["name"]}
             for k, v in PRIZES.items()
         },
     }

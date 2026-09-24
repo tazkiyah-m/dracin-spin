@@ -399,7 +399,7 @@ function renderLegend(prizes) {
   legendEl.innerHTML = Object.entries(prizes).map(([key, p]) => `
     <div class="legend-card">
       <div class="legend-name"><span class="legend-box"></span><span class="legend-text">${p.name}</span></div>
-      <div class="legend-stock">SISA: <strong>${p.stock_left ?? "∞"}</strong></div>
+      <span class="legend-badge">PROMO</span>
     </div>
   `).join("");
 }

@@ -641,15 +641,17 @@ body {
   border-radius: 2px;
 }
 
-.legend-stock {
-  color: #333333;
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-
-.legend-stock strong {
-  color: var(--maroon);
-  font-size: 0.95rem;
+.legend-badge {
+  background: var(--maroon);
+  color: var(--white);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  border: 1.5px solid var(--black);
+  box-shadow: 1.5px 1.5px 0px var(--black);
+  text-transform: uppercase;
 }
 
 /* History List */
