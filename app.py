@@ -31,7 +31,7 @@ app.secret_key = os.environ.get("SECRET_KEY", "dracin-spin-super-secret-key-2026
 # ===== DATABASE CONFIGURATION =====
 # Jika DATABASE_URL di-set (Render production) → pakai PostgreSQL yang persisten
 # Jika tidak → pakai SQLite untuk development lokal
-DATABASE_URL = os.environ.get("DATABASE_URL", "")
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
 if DATABASE_URL.startswith("postgres://"):
     # Render memakai "postgres://" tapi psycopg2 butuh "postgresql://"
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
