@@ -99,10 +99,10 @@ def _public_state():
     # Hanya berikan info progress putaran rahasia jika admin kasir sedang login
     if session.get("is_admin"):
         c2k = store_state["spin_count_2k"] % 10
-        c5k = store_state["spin_count_5k"] % 5
+        c5k = store_state["spin_count_5k"] % 15
         state["admin_stats"] = {
             "progress_2k": f"{c2k} / 10",
-            "progress_5k": f"{c5k} / 5",
+            "progress_5k": f"{c5k} / 15",
             "total_spins_2k": store_state["spin_count_2k"],
             "total_spins_5k": store_state["spin_count_5k"],
         }
@@ -179,29 +179,46 @@ def api_spin():
         if spin_type == "2k":
             store_state["credit_2k"] -= 1
             store_state["spin_count_2k"] += 1
-            # 2K: Menang hanya jika tepat putaran ke-10 (kelipatan 10)
-            is_winning_turn = (store_state["spin_count_2k"] % 10 == 0)
+            count = store_state["spin_count_2k"]
+            # 2K: Menang hanya jika tepat putaran ke-10 (kelipatan 10), hadiah minuman/snack
+            is_winning_turn = (count % 10 == 0)
+            target_prize_pool = ["Grass Jelly Drink", "Gacoan DNA"]
         else:
             store_state["credit_5k"] -= 1
             store_state["spin_count_5k"] += 1
-            # 5K: Menang hanya jika tepat putaran ke-5 (kelipatan 5)
-            is_winning_turn = (store_state["spin_count_5k"] % 5 == 0)
+            count = store_state["spin_count_5k"]
+            # 5K: Menang setiap kelipatan 5
+            is_winning_turn = (count % 5 == 0)
+            if count % 15 == 0:
+                # TEPAT PUTARAN KE-15: Khusus Grand Prize Palekko Chicken!
+                target_prize_pool = ["Palekko Chicken"]
+            else:
+                # Putaran ke-5 dan ke-10: Hadiah reguler (bukan ayam)
+                target_prize_pool = ["Grass Jelly Drink", "Gacoan DNA"]
 
         _client_cooldowns[client_token] = time.time()
 
-        # Slot Zonk dan Slot Hadiah yang masih ada stok
         zonk_indices = [i for i, seg in enumerate(SEGMENTS) if seg["prize_key"] is None]
-        prize_indices = [
-            i for i, seg in enumerate(SEGMENTS)
-            if seg["prize_key"] is not None and _stock_left(seg["prize_key"]) > 0
+
+        # Ambil hadiah dari target_prize_pool yang stok hariannya masih ada
+        available_prize_keys = [
+            pk for pk in target_prize_pool
+            if _stock_left(pk) > 0
         ]
 
-        if is_winning_turn and prize_indices:
-            # Giliran menang! Pilih salah satu hadiah yang tersedia
-            chosen_index = random.choice(prize_indices)
-            prize_key = SEGMENTS[chosen_index]["prize_key"]
-            _stock_state["given"][prize_key] += 1
-            result = {"is_win": True, "prize_key": prize_key, "prize_name": PRIZES[prize_key]["name"]}
+        if is_winning_turn and available_prize_keys:
+            chosen_prize_key = random.choice(available_prize_keys)
+            matching_indices = [
+                i for i, seg in enumerate(SEGMENTS)
+                if seg["prize_key"] == chosen_prize_key
+            ]
+            chosen_index = random.choice(matching_indices)
+            _stock_state["given"][chosen_prize_key] += 1
+            result = {
+                "is_win": True,
+                "prize_key": chosen_prize_key,
+                "prize_name": PRIZES[chosen_prize_key]["name"]
+            }
         else:
             # 100% ZONK: Bukan giliran menang atau stok hadiah hari ini habis
             chosen_index = random.choice(zonk_indices)
@@ -281,4 +298,4 @@ def admin_add():
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=5000)
-    # clean state profit cycle active
+    # clean state ready for production deploy
