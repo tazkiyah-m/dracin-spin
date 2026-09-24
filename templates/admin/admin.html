@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DRACIN - Panel Kasir (Neobrutalism)</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700;800;900&display=swap">
+  <style>
+    :root {
+      --black: #000000;
+      --white: #FFFFFF;
+      --maroon: #800020;
+      --maroon-hover: #960026;
+      --bg-page: #F6F3ED;
+      
+      --border-thick: 3.5px solid #000000;
+      --border-medium: 2.5px solid #000000;
+      --shadow-lg: 8px 8px 0px #000000;
+      --shadow-md: 5px 5px 0px #000000;
+      --shadow-sm: 3px 3px 0px #000000;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg-page);
+      background-image: radial-gradient(#000000 1.2px, transparent 1.2px);
+      background-size: 22px 22px;
+      color: var(--black);
+      font-family: 'Space Grotesk', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .admin-card {
+      background: var(--white);
+      border: 4px solid var(--black);
+      border-radius: 18px;
+      padding: 36px 30px;
+      max-width: 440px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 10px 10px 0px var(--black);
+    }
+
+    .admin-top-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .admin-badge {
+      display: inline-block;
+      background: var(--black);
+      color: var(--white);
+      font-size: 0.8rem;
+      font-weight: 800;
+      letter-spacing: 2px;
+      padding: 4px 14px;
+      border-radius: 6px;
+      margin-bottom: 0;
+    }
+
+    .btn-logout {
+      background: #FFE8E8;
+      color: var(--maroon);
+      border: 2px solid var(--black);
+      border-radius: 6px;
+      padding: 4px 12px;
+      font-family: inherit;
+      font-size: 0.75rem;
+      font-weight: 900;
+      letter-spacing: 1px;
+      cursor: pointer;
+      box-shadow: 2px 2px 0px var(--black);
+      transition: all 0.1s ease;
+    }
+
+    .btn-logout:hover {
+      background: var(--maroon);
+      color: var(--white);
+      transform: translate(-1px, -1px);
+      box-shadow: 3px 3px 0px var(--black);
+    }
+
+    .brand-title {
+      font-size: 2.5rem;
+      font-weight: 900;
+      letter-spacing: 4px;
+      margin-bottom: 4px;
+    }
+
+    .brand-subtitle {
+      color: #444444;
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin-bottom: 24px;
+    }
+
+    .status-monitor {
+      background: #FAF8F5;
+      border: var(--border-thick);
+      border-radius: 14px;
+      padding: 16px;
+      margin-bottom: 24px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .monitor-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      background: var(--white);
+      border: var(--border-medium);
+      border-radius: 10px;
+      padding: 10px;
+      box-shadow: 2px 2px 0px var(--black);
+    }
+
+    .monitor-box--5k {
+      background: var(--maroon);
+      color: var(--white);
+    }
+
+    .monitor-label {
+      font-size: 0.75rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 4px;
+    }
+
+    .monitor-box:not(.monitor-box--5k) .monitor-label {
+      color: #555555;
+    }
+
+    .monitor-box--5k .monitor-label {
+      color: #FFD2DC;
+    }
+
+    .monitor-val {
+      font-size: 1.8rem;
+      font-weight: 900;
+      line-height: 1;
+    }
+
+    .actions {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 18px 16px;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.1rem;
+      font-weight: 900;
+      border: var(--border-thick);
+      border-radius: 14px;
+      cursor: pointer;
+      letter-spacing: 1.5px;
+      transition: all 0.15s ease;
+      text-transform: uppercase;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .btn-sub {
+      font-size: 0.8rem;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .btn:active {
+      transform: translate(3px, 3px);
+      box-shadow: 1px 1px 0px var(--black) !important;
+    }
+
+    .btn-2k {
+      background: var(--white);
+      color: var(--black);
+      box-shadow: var(--shadow-md);
+    }
+
+    .btn-2k:hover {
+      background: #EFEBE4;
+      transform: translate(-2px, -2px);
+      box-shadow: 7px 7px 0px var(--black);
+    }
+
+    .btn-5k {
+      background: var(--maroon);
+      color: var(--white);
+      box-shadow: var(--shadow-md);
+    }
+
+    .btn-5k:hover {
+      background: var(--maroon-hover);
+      transform: translate(-2px, -2px);
+      box-shadow: 7px 7px 0px var(--black);
+    }
+
+    #toast {
+      margin-top: 20px;
+      font-size: 0.95rem;
+      font-weight: 800;
+      min-height: 24px;
+      color: var(--maroon);
+    }
+
+    .nav-link {
+      display: inline-block;
+      margin-top: 22px;
+      color: var(--black);
+      font-size: 0.9rem;
+      font-weight: 800;
+      text-decoration: underline;
+      letter-spacing: 0.5px;
+    }
+
+    .nav-link:hover {
+      color: var(--maroon);
+    }
+  </style>
+</head>
+<body>
+  <div class="admin-card">
+    <div class="admin-top-bar">
+      <div class="admin-badge">PANEL KASIR</div>
+      <button class="btn-logout" onclick="logoutAdmin()" title="Kunci / Keluar Kasir">🔒 KELUAR</button>
+    </div>
+    <h1 class="brand-title">DRACIN</h1>
+    <p class="brand-subtitle">Buka Akses Putaran Pelanggan</p>
+
+    <!-- Monitor Kredit Live -->
+    <div class="status-monitor">
+      <div class="monitor-box">
+        <span class="monitor-label">Kredit 2K</span>
+        <span class="monitor-val" id="monitor-2k">0</span>
+      </div>
+      <div class="monitor-box monitor-box--5k">
+        <span class="monitor-label">Kredit 5K</span>
+        <span class="monitor-val" id="monitor-5k">0</span>
+      </div>
+    </div>
+
+    <!-- Tombol Kasir -->
+    <div class="actions">
+      <button class="btn btn-2k" onclick="addCredit('2k')">
+        <span>Berikan Putaran 2K</span>
+        <span class="btn-sub">Pelanggan Bayar Rp 2.000</span>
+      </button>
+
+      <button class="btn btn-5k" onclick="addCredit('5k')">
+        <span>Berikan Putaran 5K</span>
+        <span class="btn-sub">Pelanggan Bayar Rp 5.000</span>
+      </button>
+    </div>
+
+    <div id="toast"></div>
+
+    <a href="/" target="_blank" class="nav-link">↗ Buka Layar Pelanggan</a>
+  </div>
+
+  <script>
+    const toast = document.getElementById("toast");
+    const m2k = document.getElementById("monitor-2k");
+    const m5k = document.getElementById("monitor-5k");
+
+    async function fetchState() {
+      try {
+        const res = await fetch("/api/state");
+        if (res.ok) {
+          const state = await res.json();
+          m2k.textContent = state.credit_2k;
+          m5k.textContent = state.credit_5k;
+        }
+      } catch (e) {}
+    }
+
+    setInterval(fetchState, 1500);
+    fetchState();
+
+    async function addCredit(type) {
+      toast.textContent = "Mengirim sinyal...";
+      try {
+        const res = await fetch("/api/admin/add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: type })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          m2k.textContent = data.state.credit_2k;
+          m5k.textContent = data.state.credit_5k;
+          toast.textContent = `★ Berhasil! Akses putaran ${type.toUpperCase()} telah dibuka.`;
+          setTimeout(() => toast.textContent = "", 3500);
+        } else if (res.status === 401) {
+          toast.textContent = "Sesi kasir berakhir. Mengalihkan ke login...";
+          setTimeout(() => { window.location.href = "/admin/login"; }, 800);
+        } else {
+          const err = await res.json().catch(() => ({}));
+          toast.textContent = err.error || "Gagal membuka putaran.";
+        }
+      } catch (e) {
+        toast.textContent = "Gagal terhubung ke server.";
+      }
+    }
+
+    async function logoutAdmin() {
+      try {
+        await fetch("/api/admin/logout", { method: "POST" });
+        window.location.href = "/admin/login";
+      } catch (e) {
+        window.location.href = "/admin/login";
+      }
+    }
+  </script>
+</body>
+</html>

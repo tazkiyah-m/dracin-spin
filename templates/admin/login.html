@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DRACIN - Login Kasir (PIN Keamanan)</title>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@600;700;800;900&display=swap">
+  <style>
+    :root {
+      --black: #000000;
+      --white: #FFFFFF;
+      --maroon: #800020;
+      --maroon-hover: #960026;
+      --bg-page: #F6F3ED;
+      
+      --border-thick: 3.5px solid #000000;
+      --border-medium: 2.5px solid #000000;
+      --shadow-lg: 8px 8px 0px #000000;
+      --shadow-md: 5px 5px 0px #000000;
+      --shadow-sm: 3px 3px 0px #000000;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background-color: var(--bg-page);
+      background-image: radial-gradient(#000000 1.2px, transparent 1.2px);
+      background-size: 22px 22px;
+      color: var(--black);
+      font-family: 'Space Grotesk', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .login-card {
+      background: var(--white);
+      border: 4px solid var(--black);
+      border-radius: 20px;
+      padding: 32px 28px;
+      max-width: 400px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 10px 10px 0px var(--black);
+    }
+
+    .badge-lock {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--black);
+      color: var(--white);
+      font-size: 0.8rem;
+      font-weight: 800;
+      letter-spacing: 2px;
+      padding: 5px 14px;
+      border-radius: 6px;
+      margin-bottom: 12px;
+      text-transform: uppercase;
+    }
+
+    .brand-title {
+      font-size: 2.4rem;
+      font-weight: 900;
+      letter-spacing: 4px;
+      margin-bottom: 4px;
+    }
+
+    .brand-subtitle {
+      color: #555555;
+      font-size: 0.9rem;
+      font-weight: 700;
+      margin-bottom: 22px;
+    }
+
+    /* PIN Dots Display */
+    .pin-display {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .pin-dot {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      border: 2.5px solid var(--black);
+      background: var(--white);
+      box-shadow: 2px 2px 0px var(--black);
+      transition: all 0.15s ease;
+    }
+
+    .pin-dot.filled {
+      background: var(--maroon);
+      transform: scale(1.15);
+    }
+
+    /* Keypad Grid */
+    .keypad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .key-btn {
+      padding: 16px 0;
+      font-family: 'Space Grotesk', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 900;
+      background: var(--white);
+      color: var(--black);
+      border: var(--border-medium);
+      border-radius: 12px;
+      box-shadow: var(--shadow-sm);
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.1s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .key-btn:hover {
+      background: #EFEBE4;
+      transform: translate(-2px, -2px);
+      box-shadow: 5px 5px 0px var(--black);
+    }
+
+    .key-btn:active {
+      transform: translate(2px, 2px);
+      box-shadow: 1px 1px 0px var(--black);
+    }
+
+    .key-btn.action-btn {
+      font-size: 1rem;
+      letter-spacing: 1px;
+    }
+
+    .key-btn.btn-clear {
+      background: #FFE8E8;
+      color: var(--maroon);
+    }
+
+    .key-btn.btn-del {
+      background: #FAF8F5;
+    }
+
+    #error-msg {
+      min-height: 24px;
+      font-size: 0.85rem;
+      font-weight: 800;
+      color: var(--maroon);
+      margin-bottom: 14px;
+    }
+
+    .hint-box {
+      background: #FAF8F5;
+      border: 2px dashed #888888;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: #666666;
+    }
+
+    .link-back {
+      display: inline-block;
+      margin-top: 18px;
+      color: var(--black);
+      font-size: 0.85rem;
+      font-weight: 800;
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="badge-lock">🔒 KEAMANAN KASIR</div>
+    <h1 class="brand-title">DRACIN</h1>
+    <p class="brand-subtitle">Masukkan 6 Digit PIN Kasir</p>
+
+    <!-- Visual PIN Dots -->
+    <div class="pin-display">
+      <div class="pin-dot" id="dot-0"></div>
+      <div class="pin-dot" id="dot-1"></div>
+      <div class="pin-dot" id="dot-2"></div>
+      <div class="pin-dot" id="dot-3"></div>
+      <div class="pin-dot" id="dot-4"></div>
+      <div class="pin-dot" id="dot-5"></div>
+    </div>
+
+    <div id="error-msg"></div>
+
+    <!-- Keypad Numpad -->
+    <div class="keypad">
+      <button class="key-btn" onclick="pressKey('1')">1</button>
+      <button class="key-btn" onclick="pressKey('2')">2</button>
+      <button class="key-btn" onclick="pressKey('3')">3</button>
+      
+      <button class="key-btn" onclick="pressKey('4')">4</button>
+      <button class="key-btn" onclick="pressKey('5')">5</button>
+      <button class="key-btn" onclick="pressKey('6')">6</button>
+      
+      <button class="key-btn" onclick="pressKey('7')">7</button>
+      <button class="key-btn" onclick="pressKey('8')">8</button>
+      <button class="key-btn" onclick="pressKey('9')">9</button>
+      
+      <button class="key-btn action-btn btn-clear" onclick="clearPin()">C</button>
+      <button class="key-btn" onclick="pressKey('0')">0</button>
+      <button class="key-btn action-btn btn-del" onclick="deletePin()">⌫</button>
+    </div>
+
+    <div class="hint-box">
+      PIN Default Kasir: <strong>123456</strong>
+    </div>
+
+    <a href="/" class="link-back">← Kembali ke Layar Pelanggan</a>
+  </div>
+
+  <script>
+    let currentPin = "";
+    const errorEl = document.getElementById("error-msg");
+
+    function updateDots() {
+      for (let i = 0; i < 6; i++) {
+        const dot = document.getElementById("dot-" + i);
+        if (i < currentPin.length) {
+          dot.classList.add("filled");
+        } else {
+          dot.classList.remove("filled");
+        }
+      }
+    }
+
+    function pressKey(digit) {
+      if (currentPin.length < 6) {
+        currentPin += digit;
+        updateDots();
+        errorEl.textContent = "";
+        if (currentPin.length === 6) {
+          submitPin();
+        }
+      }
+    }
+
+    function deletePin() {
+      if (currentPin.length > 0) {
+        currentPin = currentPin.slice(0, -1);
+        updateDots();
+        errorEl.textContent = "";
+      }
+    }
+
+    function clearPin() {
+      currentPin = "";
+      updateDots();
+      errorEl.textContent = "";
+    }
+
+    async function submitPin() {
+      errorEl.textContent = "Memverifikasi...";
+      try {
+        const res = await fetch("/api/admin/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pin: currentPin })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          window.location.href = "/admin";
+        } else {
+          errorEl.textContent = data.error || "PIN Salah.";
+          currentPin = "";
+          updateDots();
+        }
+      } catch (e) {
+        errorEl.textContent = "Gagal terhubung ke server.";
+        currentPin = "";
+        updateDots();
+      }
+    }
+
+    // Keyboard support
+    window.addEventListener("keydown", (e) => {
+      if (e.key >= "0" && e.key <= "9") {
+        pressKey(e.key);
+      } else if (e.key === "Backspace") {
+        deletePin();
+      } else if (e.key === "Escape") {
+        clearPin();
+      }
+    });
+  </script>
+</body>
+</html>
